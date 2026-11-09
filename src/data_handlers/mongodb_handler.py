@@ -122,12 +122,12 @@ class MongoHandler:
             )
 
         collection = self.get_collection(collection_name)
-        documents = self._dataframe_to_documents(df)
 
         inserted_count = 0
 
-        for start in range(0, len(documents), batch_size):
-            batch = documents[start : start + batch_size]
+        for start in range(0, len(df), batch_size):
+            # Документы строим по батчам, а не для всего датафрейма сразу.
+            batch = self._dataframe_to_documents(df.iloc[start : start + batch_size])
 
             try:
                 result = collection.insert_many(

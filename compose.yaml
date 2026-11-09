@@ -10,6 +10,13 @@ services:
       - "5432:5432"
     volumes:
       - ./data/postgres_main_data:/var/lib/postgresql
+    healthcheck:
+      # -h 127.0.0.1: временный сервер initdb слушает только unix-сокет,
+      # поэтому проверка по TCP не даёт ложного "готов".
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER}"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
     networks:
       - data_stack
 
@@ -24,6 +31,13 @@ services:
       - "5433:5432"
     volumes:
       - ./data/postgres_ml_data:/var/lib/postgresql
+    healthcheck:
+      # -h 127.0.0.1: временный сервер initdb слушает только unix-сокет,
+      # поэтому проверка по TCP не даёт ложного "готов".
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER}"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
     networks:
       - data_stack
 
@@ -40,6 +54,11 @@ services:
     volumes:
       - ./data/clickhouse_data:/var/lib/clickhouse
       - ./data/clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
     networks:
       - data_stack
 
@@ -54,12 +73,19 @@ services:
       - "27017:27017"
     volumes:
       - ./data/mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u $${MONGO_INITDB_ROOT_USERNAME} -p $${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep -q 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
     networks:
       - data_stack
 
   redis:
     image: redis:7-alpine
     container_name: redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped
     command:
       - redis-server
@@ -71,6 +97,11 @@ services:
       - "6379:6379"
     volumes:
       - ./data/redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping 2>/dev/null | grep -q PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
     networks:
       - data_stack
 

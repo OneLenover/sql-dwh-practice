@@ -14,7 +14,6 @@ def gen_users_cities_dataframe(users_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def gen_users_clusters_dataframe(users_df: pd.DataFrame) -> pd.DataFrame:
-    normal_distribution_sequence(0, len(USER_CLUSTERS) - 1, len(users_df))
     users_df["price_cluster"] = list(
         map(
             lambda x: USER_CLUSTERS[x],

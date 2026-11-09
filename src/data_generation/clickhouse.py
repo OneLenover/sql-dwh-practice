@@ -28,7 +28,13 @@ def generate_interaction_history_dataframe(
     products_df: pd.DataFrame,
     users_df: pd.DataFrame,
     size: int,
+    id_offset: int = 0,
 ) -> pd.DataFrame:
+    """Генерирует пачку интеракций (~size строк).
+
+    id_offset сдвигает interaction_id, чтобы id были уникальны между пачками.
+    Размер приблизительный: на один клик в среднем приходится 1.525 строк.
+    """
     rng = np.random.default_rng()
 
     user_ids = users_df["user_id"].to_numpy()
@@ -39,9 +45,8 @@ def generate_interaction_history_dataframe(
     product_ids = products_df["product_id"].to_numpy()
     last_working_date = LAST_WORKING_DATE
 
-    expected_clicks = int(np.ceil(size / 1.525))
-
-    n_clicks = max(expected_clicks + 100, 1)
+    n_clicks = max(int(size / 1.525), 1)
+    last_ns = np.datetime64(last_working_date, "ns")
 
     user_idx = rng.integers(0, len(user_ids), size=n_clicks)
     product_idx = rng.integers(0, len(product_ids), size=n_clicks)
@@ -58,34 +63,43 @@ def generate_interaction_history_dataframe(
     cart_idx = np.flatnonzero(has_cart)
     cart_user_ids = click_user_ids[cart_idx]
     cart_product_ids = click_product_ids[cart_idx]
-    cart_dt = add_random_timedelta(
-        click_dt[cart_idx],
-        max_days=14,
-        max_hours=23,
-        max_minutes=59,
-        max_seconds=59,
+    cart_dt = np.minimum(
+        add_random_timedelta(
+            click_dt[cart_idx],
+            max_days=14,
+            max_hours=23,
+            max_minutes=59,
+            max_seconds=59,
+        ),
+        last_ns,
     )
 
     has_purchase = rng.random(len(cart_idx)) < 0.25
     purchase_idx = cart_idx[has_purchase]
     purchase_user_ids = cart_user_ids[has_purchase]
     purchase_product_ids = cart_product_ids[has_purchase]
-    purchase_dt = add_random_timedelta(
-        cart_dt[has_purchase],
-        max_days=30,
-        max_hours=23,
-        max_minutes=59,
-        max_seconds=59,
+    purchase_dt = np.minimum(
+        add_random_timedelta(
+            cart_dt[has_purchase],
+            max_days=30,
+            max_hours=23,
+            max_minutes=59,
+            max_seconds=59,
+        ),
+        last_ns,
     )
     purchase_order_ids = np.array([uuid.uuid4() for _ in purchase_idx], dtype=object)
 
     has_paid = rng.random(len(purchase_idx)) < 0.25
     paid_user_ids = purchase_user_ids[has_paid]
     paid_product_ids = purchase_product_ids[has_paid]
-    paid_dt = add_random_timedelta(
-        purchase_dt[has_paid],
-        max_minutes=59,
-        max_seconds=59,
+    paid_dt = np.minimum(
+        add_random_timedelta(
+            purchase_dt[has_paid],
+            max_minutes=59,
+            max_seconds=59,
+        ),
+        last_ns,
     )
     paid_order_ids = purchase_order_ids[has_paid]
 
@@ -130,9 +144,11 @@ def generate_interaction_history_dataframe(
 
     interaction_history = pd.concat(frames, ignore_index=True)
 
-    interaction_history = interaction_history.iloc[:size].copy()
-
-    interaction_history = interaction_history.reset_index(names=["interaction_id"])
+    interaction_history.insert(
+        0,
+        "interaction_id",
+        np.arange(id_offset, id_offset + len(interaction_history), dtype="int64"),
+    )
 
     return interaction_history[
         [
@@ -146,13 +162,10 @@ def generate_interaction_history_dataframe(
     ]
 
 
-def generate_orders_history_dataframe(
-    interactions_df: pd.DataFrame, shops_df: pd.DataFrame
-) -> pd.DataFrame:
+def generate_orders_history_dataframe(interactions_df: pd.DataFrame) -> pd.DataFrame:
+    # NB: раньше здесь на каждую строку выбирался случайный shop_id, который
+    # потом выбрасывался (в orders_history такой колонки нет). Убрано.
     rng = np.random.default_rng()
-    interactions_df["shop_id"] = rng.choice(
-        shops_df["shop_id"].values, size=len(interactions_df)
-    )
 
     purchased_orders_df = interactions_df[
         interactions_df["interaction_type"] == "purchased"
@@ -261,5 +274,9 @@ def gen_delivery_price_history_dataframe(shops_df: pd.DataFrame) -> pd.DataFrame
     shops_df = pd.concat([city_df, shops_df], ignore_index=True)
     shops_df["price"] = normal_distribution_sequence(
         MIN_PRICE, MAX_PRICE, len(shops_df)
+    )
+
+    shops_df["object_id"] = shops_df["object_id"].map(
+        lambda value: str(value) if pd.notna(value) else None
     )
     return shops_df

@@ -117,13 +117,13 @@ class ClickHouseHandler:
         if mode == "replace":
             self.truncate_table(table_name, database=database)
 
-        prepared_df = self._prepare_dataframe(df)
-        columns = list(prepared_df.columns)
+        columns = list(df.columns)
 
         total_rows = 0
 
-        for start in range(0, len(prepared_df), chunk_size):
-            chunk = prepared_df.iloc[start : start + chunk_size]
+        for start in range(0, len(df), chunk_size):
+            # Подготовка по чанкам: не копируем весь датафрейм целиком.
+            chunk = self._prepare_dataframe(df.iloc[start : start + chunk_size])
 
             self.client.insert_df(
                 table=f'"{database}"."{table_name}"',

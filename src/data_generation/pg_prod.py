@@ -28,7 +28,7 @@ def _generate_closing_date(opening_date: date) -> datetime:
 def generate_shops_dataframe(num_unique_shops: int) -> pd.DataFrame:
     rng = np.random.default_rng()
 
-    unique_shops = [uuid.uuid4().int for _ in range(num_unique_shops)]
+    unique_shops = [uuid.uuid4() for _ in range(num_unique_shops)]
     shops_opening_date = [
         random_datetime(OPENING_DATE, LAST_WORKING_DATE).date()
         for _ in range(num_unique_shops)
@@ -65,15 +65,17 @@ def _generate_registration_datetime(birthday: date) -> datetime:
 
 
 def generate_users_dataframe(num_unique_users: int) -> pd.DataFrame:
-    start_birthday_date = int(datetime.fromisoformat(START_BIRTHDAY_DATE).timestamp())
-    end_birthday_date = int(datetime.fromisoformat(END_BIRTHDAY_DATE).timestamp())
+    start_birthday_date = date.fromisoformat(START_BIRTHDAY_DATE).toordinal()
+    end_birthday_date = date.fromisoformat(END_BIRTHDAY_DATE).toordinal()
 
     unique_users = [uuid.uuid4() for _ in range(num_unique_users)]
     users_birthday = list(
         map(
-            lambda x: datetime.utcfromtimestamp(x).date(),
+            date.fromordinal,
             normal_distribution_sequence(
-                start_birthday_date, end_birthday_date, size=num_unique_users
+                start_birthday_date,
+                end_birthday_date,
+                size=num_unique_users
             ),
         )
     )

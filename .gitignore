@@ -12,3 +12,13 @@ wheels/
 *.ruff_cache
 
 .env
+
+# Database data
+/data/postgres_main_data/
+/data/postgres_ml_data/
+/data/clickhouse_data/
+/data/clickhouse_logs/
+/data/mongodb_data/
+/data/redis_data/
+
+*.xml
