@@ -9,6 +9,8 @@ from uuid import UUID
 from dotenv import load_dotenv
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -178,7 +180,7 @@ def get_clickhouse_column_type(series: pd.Series) -> str:
             elif isinstance(value, datetime):
                 ch_type = "DateTime64(3, 'UTC')"
             elif isinstance(value, date):
-                ch_type = "Date"
+                ch_type = "Date32"
             elif isinstance(value, Decimal):
                 ch_type = "Decimal(18, 4)"
             elif isinstance(value, (bool, np.bool_)):
@@ -200,7 +202,28 @@ def create_clickhouse_table(
     df: pd.DataFrame,
     table_name: str,
 ) -> None:
+    """Создаёт таблицу либо добавляет в неё новые колонки из DataFrame."""
+    target = f"`default`.`{table_name}`"
+
     if handler.table_exists(table_name):
+        # При добавлении order_history_id в уже существующий источник
+        # мигрируем схему. Данные будут очищены перед новой генерацией.
+        description = handler.query_df(f"DESCRIBE TABLE {target}")
+        existing_columns = set(description["name"].tolist())
+
+        for column in df.columns:
+            if column not in existing_columns:
+                column_type = get_clickhouse_column_type(df[column])
+                handler.execute(
+                    f"ALTER TABLE {target} "
+                    f"ADD COLUMN IF NOT EXISTS `{column}` {column_type}"
+                )
+                logger.info(
+                    "Добавлена колонка %s в default.%s (%s)",
+                    column,
+                    table_name,
+                    column_type,
+                )
         return
 
     columns_ddl = ",\n".join(
@@ -210,7 +233,7 @@ def create_clickhouse_table(
 
     handler.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS `default`.`{table_name}`
+        CREATE TABLE IF NOT EXISTS {target}
         (
             {columns_ddl}
         )
@@ -259,15 +282,28 @@ def load_clickhouse_batches(
 
 
 def iter_interactions_and_orders(products_df, users_df):
-    """Пачками генерирует interactions и выведенный из них orders_history."""
-    offset = 0
-    while offset < NUM_UNIQUE_INTERACTIONS:
-        batch_size = min(INTERACTIONS_BATCH_SIZE, NUM_UNIQUE_INTERACTIONS - offset)
-        interactions = generate_interaction_history_dataframe(
-            products_df, users_df, batch_size, id_offset=offset
+    """Генерирует две таблицы пачками с отдельными возрастающими ID."""
+    interaction_offset = 0
+    order_history_offset = 0
+
+    while interaction_offset < NUM_UNIQUE_INTERACTIONS:
+        batch_size = min(
+            INTERACTIONS_BATCH_SIZE,
+            NUM_UNIQUE_INTERACTIONS - interaction_offset,
         )
-        orders = generate_orders_history_dataframe(interactions)
-        offset += len(interactions)
+        interactions = generate_interaction_history_dataframe(
+            products_df,
+            users_df,
+            batch_size,
+            id_offset=interaction_offset,
+        )
+        orders = generate_orders_history_dataframe(
+            interactions,
+            id_offset=order_history_offset,
+        )
+
+        interaction_offset += len(interactions)
+        order_history_offset += len(orders)
         yield interactions, orders
 
 

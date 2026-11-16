@@ -105,6 +105,27 @@ services:
     networks:
       - data_stack
 
+  clickhouse_dwh:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse_dwh
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    ports:
+      - "8124:8123"
+      - "9001:9000"
+    volumes:
+      - ./data/clickhouse_dwh_data:/var/lib/clickhouse
+      - ./data/clickhouse_dwh_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks:
+      - data_stack
+
 networks:
   data_stack:
     driver: bridge

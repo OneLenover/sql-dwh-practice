@@ -20,5 +20,7 @@ wheels/
 /data/clickhouse_logs/
 /data/mongodb_data/
 /data/redis_data/
+/data/clickhouse_dwh_data/
+/data/clickhouse_dwh_logs/
 
 *.xml

@@ -162,9 +162,14 @@ def generate_interaction_history_dataframe(
     ]
 
 
-def generate_orders_history_dataframe(interactions_df: pd.DataFrame) -> pd.DataFrame:
-    # NB: раньше здесь на каждую строку выбирался случайный shop_id, который
-    # потом выбрасывался (в orders_history такой колонки нет). Убрано.
+def generate_orders_history_dataframe(
+    interactions_df: pd.DataFrame,
+    id_offset: int = 0,
+) -> pd.DataFrame:
+    """Строит историю статусов заказов и добавляет числовой ключ события.
+
+    id_offset нужен, чтобы order_history_id не повторялся между пачками.
+    """
     rng = np.random.default_rng()
 
     purchased_orders_df = interactions_df[
@@ -177,24 +182,34 @@ def generate_orders_history_dataframe(interactions_df: pd.DataFrame) -> pd.DataF
 
     purchased_orders_df = purchased_orders_df[
         ["user_id", "product_id", "datetime", "order_id"]
-    ]
+    ].copy()
     purchased_orders_df["stage"] = "created"
-    paid_orders_df = paid_orders_df[["user_id", "product_id", "datetime", "order_id"]]
+
+    paid_orders_df = paid_orders_df[
+        ["user_id", "product_id", "datetime", "order_id"]
+    ].copy()
     paid_orders_df["stage"] = "accepted"
     paid_orders_df["datetime"] = add_random_timedelta(
         paid_orders_df["datetime"],
         max_minutes=59,
         max_seconds=59,
     )
+
     canceled_orders_df = canceled_orders_df[
         ["user_id", "product_id", "datetime", "order_id"]
-    ]
+    ].copy()
     canceled_orders_df["datetime"] += timedelta(hours=1)
     canceled_orders_df["stage"] = "canceled"
-    orders_history_df = [purchased_orders_df, paid_orders_df, canceled_orders_df]
+
+    orders_history_parts = [
+        purchased_orders_df,
+        paid_orders_df,
+        canceled_orders_df,
+    ]
 
     cur_df = paid_orders_df.copy()
     for gen_arr, probs in zip(ORDER_STATES, ORDER_STATES_PROB):
+        cur_df = cur_df.copy()
         cur_df["stage"] = rng.choice(gen_arr, size=len(cur_df), p=probs)
         cur_df["datetime"] = add_random_timedelta(
             cur_df["datetime"],
@@ -203,21 +218,32 @@ def generate_orders_history_dataframe(interactions_df: pd.DataFrame) -> pd.DataF
             max_minutes=59,
             max_seconds=59,
         )
-        orders_history_df.append(cur_df)
+        orders_history_parts.append(cur_df)
         cur_df = cur_df[~cur_df.stage.isin(DEAD_END_STAGES)]
 
-    orders_history_df = pd.concat(orders_history_df, ignore_index=True)
+    orders_history_df = pd.concat(orders_history_parts, ignore_index=True)
     orders_history_df.loc[
         (orders_history_df.stage == "completed")
         & (
             orders_history_df.order_id.isin(
-                orders_history_df[
-                    orders_history_df["stage"] == "sent_via_delivery"
-                ].order_id.unique()
+                orders_history_df.loc[
+                    orders_history_df["stage"] == "sent_via_delivery",
+                    "order_id",
+                ].unique()
             )
         ),
         "stage",
     ] = "delivered"
+
+    orders_history_df.insert(
+        0,
+        "order_history_id",
+        np.arange(
+            id_offset,
+            id_offset + len(orders_history_df),
+            dtype="int64",
+        ),
+    )
     return orders_history_df
 
 
