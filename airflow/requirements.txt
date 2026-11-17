@@ -1,0 +1,11 @@
+# Dependencies used by scripts.transfer_to_raw_layer and its imports.
+clickhouse-connect
+numpy
+pandas>=2.2,<3
+psycopg[binary]
+pydantic
+pymongo
+pyspark==4.3.0
+python-dotenv
+redis
+sqlalchemy

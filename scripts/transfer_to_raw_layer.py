@@ -207,10 +207,28 @@ def transfer_data_to_raw_layer() -> dict[str, int]:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
+    # Адреса источников задаются через окружение.
+    # Локальный запуск сохраняет localhost и опубликованные на хост порты,
+    # а Airflow в Docker использует DNS-имена сервисов и внутренние порты.
+    pg_main_host = os.getenv("POSTGRES_MAIN_HOST", "localhost")
+    pg_main_port = int(os.getenv("POSTGRES_MAIN_PORT", "5432"))
+    pg_ml_host = os.getenv("POSTGRES_ML_HOST", "localhost")
+    pg_ml_port = int(os.getenv("POSTGRES_ML_PORT", "5433"))
+
+    clickhouse_source_host = os.getenv("CLICKHOUSE_SOURCE_HOST", "localhost")
+    clickhouse_source_port = int(os.getenv("CLICKHOUSE_SOURCE_PORT", "8123"))
+    clickhouse_dwh_host = os.getenv("CLICKHOUSE_DWH_HOST", "localhost")
+    clickhouse_dwh_port = int(os.getenv("CLICKHOUSE_DWH_PORT", "8124"))
+
+    mongo_host = os.getenv("MONGO_HOST", "localhost")
+    mongo_port = int(os.getenv("MONGO_PORT", "27017"))
+    redis_host = os.getenv("REDIS_HOST", "localhost")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+
     # Источники PostgreSQL.
     pg_main = JdbcConfig(
         url=(
-            "jdbc:postgresql://localhost:5432/"
+            f"jdbc:postgresql://{pg_main_host}:{pg_main_port}/"
             f"{os.getenv('POSTGRES_MAIN_DB', required_env('POSTGRES_MAIN_USER'))}"
         ),
         driver=POSTGRES_DRIVER,
@@ -219,7 +237,7 @@ def transfer_data_to_raw_layer() -> dict[str, int]:
     )
     pg_ml = JdbcConfig(
         url=(
-            "jdbc:postgresql://localhost:5433/"
+            f"jdbc:postgresql://{pg_ml_host}:{pg_ml_port}/"
             f"{os.getenv('POSTGRES_ML_DB', required_env('POSTGRES_ML_USER'))}"
         ),
         driver=POSTGRES_DRIVER,
@@ -229,30 +247,27 @@ def transfer_data_to_raw_layer() -> dict[str, int]:
 
     # Исходный ClickHouse и отдельный ClickHouse-инстанс DWH.
     clickhouse_src = JdbcConfig(
-        url="jdbc:clickhouse:http://localhost:8123/default",
+        url=f"jdbc:clickhouse:http://{clickhouse_source_host}:{clickhouse_source_port}/default",
         driver=CLICKHOUSE_DRIVER,
         user=required_env("CLICKHOUSE_USER"),
         password=required_env("CLICKHOUSE_PASSWORD"),
     )
     clickhouse_dwh = JdbcConfig(
-        url="jdbc:clickhouse:http://localhost:8124/default",
+        url=f"jdbc:clickhouse:http://{clickhouse_dwh_host}:{clickhouse_dwh_port}/default",
         driver=CLICKHOUSE_DRIVER,
         user=required_env("CLICKHOUSE_USER"),
         password=required_env("CLICKHOUSE_PASSWORD"),
     )
 
     mongo_uri = build_mongodb_uri(
-        host="localhost",
-        port=27017,
+        host=mongo_host,
+        port=mongo_port,
         username=required_env("MONGO_USER"),
         password=required_env("MONGO_PASSWORD"),
         database="shop",
         collection="competitors_products_price_history",
         auth_source="admin",
     )
-
-    redis_host = "localhost"
-    redis_port = 6379
     redis_password = required_env("REDIS_PASSWORD")
 
     spark_config = {

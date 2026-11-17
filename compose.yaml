@@ -124,7 +124,9 @@ services:
       timeout: 3s
       retries: 40
     networks:
-      - data_stack
+      data_stack:
+        aliases:
+          - clickhouse-dwh
 
 networks:
   data_stack:

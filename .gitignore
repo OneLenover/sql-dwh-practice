@@ -12,6 +12,9 @@ wheels/
 *.ruff_cache
 
 .env
+.env.*
+!.env.example
+!.env.airflow.example
 
 # Database data
 /data/postgres_main_data/
@@ -24,3 +27,9 @@ wheels/
 /data/clickhouse_dwh_logs/
 
 *.xml
+
+
+# Airflow runtime files
+airflow/logs/
+airflow/dags/__pycache__/
+airflow/plugins/__pycache__/
