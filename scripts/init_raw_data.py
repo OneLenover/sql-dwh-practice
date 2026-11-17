@@ -281,8 +281,16 @@ def load_clickhouse_batches(
     return total
 
 
-def iter_interactions_and_orders(products_df, users_df):
-    """Генерирует две таблицы пачками с отдельными возрастающими ID."""
+
+def iter_interactions_and_orders(products_df, users_df, shops_df):
+    """Генерирует интеракции и историю заказов пачками.
+
+    Каждому заказу назначается магазин. Один shop_id сохраняется
+    для всех стадий одного заказа.
+
+    Для interaction_id и order_history_id используются отдельные
+    возрастающие смещения между пачками.
+    """
     interaction_offset = 0
     order_history_offset = 0
 
@@ -291,19 +299,26 @@ def iter_interactions_and_orders(products_df, users_df):
             INTERACTIONS_BATCH_SIZE,
             NUM_UNIQUE_INTERACTIONS - interaction_offset,
         )
+
+        # Генерируем интеракции.
         interactions = generate_interaction_history_dataframe(
             products_df,
             users_df,
             batch_size,
             id_offset=interaction_offset,
         )
+
+        # Генерируем историю заказов с привязкой к магазинам.
         orders = generate_orders_history_dataframe(
-            interactions,
+            interactions_df=interactions,
+            shops_df=shops_df,
             id_offset=order_history_offset,
         )
 
+        # Обновляем смещения для следующей пачки.
         interaction_offset += len(interactions)
         order_history_offset += len(orders)
+
         yield interactions, orders
 
 
@@ -374,7 +389,7 @@ def load_data_to_databases(connections: dict) -> dict[str, dict[str, int]]:
     # 5. ClickHouse: interactions + orders_history (большие, пачками)
     interactions_total = orders_total = 0
     first = True
-    for interactions, orders in iter_interactions_and_orders(products_df, users_df):
+    for interactions, orders in iter_interactions_and_orders(products_df, users_df, shops_df):
         if first:
             for name, df in (("interactions", interactions), ("orders_history", orders)):
                 create_clickhouse_table(ch, df, name)

@@ -31,6 +31,7 @@ INCREMENTAL_COLUMNS = {
 
 # ClickHouse UUID читаем как String: иначе JDBC возвращает UUID как OTHER,
 # который Spark JDBC не может отобразить в собственный тип.
+
 CLICKHOUSE_READ_QUERIES = {
     "interactions": """
         SELECT
@@ -42,6 +43,7 @@ CLICKHOUSE_READ_QUERIES = {
             toString(order_id) AS order_id
         FROM default.interactions
     """,
+
     "orders_history": """
         SELECT
             order_history_id,
@@ -49,6 +51,7 @@ CLICKHOUSE_READ_QUERIES = {
             product_id,
             datetime,
             toString(order_id) AS order_id,
+            toString(shop_id) AS shop_id,
             stage
         FROM default.orders_history
     """,
@@ -79,6 +82,7 @@ def build_mongodb_uri(
     )
 
 
+
 def create_clickhouse_table_in_dwh(
     spark_handler: PySparkHandler,
     dwh_connection: JdbcConfig,
@@ -86,17 +90,69 @@ def create_clickhouse_table_in_dwh(
     table_name: str,
     database: str = "raw_layer",
 ) -> None:
-    """Создаёт таблицу по схеме Spark DataFrame, если её ещё нет."""
-    if spark_handler.clickhouse_table_exists(dwh_connection, database, table_name):
+    """Создаёт таблицу или добавляет отсутствующие колонки в существующую."""
+
+    target = spark_handler.quote_table(database, table_name)
+
+    if spark_handler.clickhouse_table_exists(
+        dwh_connection,
+        database,
+        table_name,
+    ):
+        # Получаем текущую структуру таблицы DWH.
+        existing_schema = spark_handler.read_jdbc_query(
+            dwh_connection,
+            f"""
+                SELECT name
+                FROM system.columns
+                WHERE database = '{database}'
+                  AND table = '{table_name}'
+            """,
+        )
+
+        existing_columns = {
+            row["name"] for row in existing_schema.collect()
+        }
+
+        # Добавляем новые колонки, которых ещё нет в DWH.
+        for field in df.schema.fields:
+            if field.name in existing_columns:
+                continue
+
+            column_name = spark_handler.quote_identifier(field.name)
+
+            column_type = spark_handler.clickhouse_type(
+                field.dataType,
+                nullable=field.nullable,
+            )
+
+            spark_handler.execute_jdbc(
+                dwh_connection,
+                f"""
+                    ALTER TABLE {target}
+                    ADD COLUMN IF NOT EXISTS
+                    {column_name} {column_type}
+                """,
+            )
+
+            logger.info(
+                "Добавлена колонка %s в %s.%s (%s)",
+                field.name,
+                database,
+                table_name,
+                column_type,
+            )
+
         return
 
+    # Если таблицы ещё нет, создаём её по схеме Spark DataFrame.
     columns_ddl = ",\n".join(
         f"{spark_handler.quote_identifier(field.name)} "
         f"{spark_handler.clickhouse_type(field.dataType, nullable=field.nullable)}"
         for field in df.schema.fields
     )
+
     order_by = CLICKHOUSE_ORDER_BY.get(table_name, "tuple()")
-    target = spark_handler.quote_table(database, table_name)
 
     sql = f"""
         CREATE TABLE IF NOT EXISTS {target}
@@ -107,8 +163,14 @@ def create_clickhouse_table_in_dwh(
         ORDER BY {order_by}
         SETTINGS allow_nullable_key = 1
     """
+
     spark_handler.execute_jdbc(dwh_connection, sql)
-    logger.info("Создана таблица %s.%s", database, table_name)
+
+    logger.info(
+        "Создана таблица %s.%s",
+        database,
+        table_name,
+    )
 
 
 def load_dataframe_to_raw_layer(

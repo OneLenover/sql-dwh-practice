@@ -162,55 +162,115 @@ def generate_interaction_history_dataframe(
     ]
 
 
+
 def generate_orders_history_dataframe(
     interactions_df: pd.DataFrame,
+    shops_df: pd.DataFrame,
     id_offset: int = 0,
 ) -> pd.DataFrame:
-    """Строит историю статусов заказов и добавляет числовой ключ события.
+    """Генерирует историю статусов заказов с привязкой к магазину.
+
+    Для каждого уникального order_id один раз выбирается shop_id.
+    Все стадии одного заказа сохраняют назначенный магазин.
 
     id_offset нужен, чтобы order_history_id не повторялся между пачками.
     """
     rng = np.random.default_rng()
 
+    if "shop_id" not in shops_df.columns:
+        raise ValueError("В shops_df отсутствует колонка shop_id")
+
+    available_shop_ids = shops_df["shop_id"].dropna().unique()
+
+    if len(available_shop_ids) == 0:
+        raise ValueError("В shops_df нет доступных shop_id")
+
     purchased_orders_df = interactions_df[
         interactions_df["interaction_type"] == "purchased"
-    ]
-    paid_orders_df = interactions_df[interactions_df["interaction_type"] == "paid"]
-    canceled_orders_df = purchased_orders_df[
-        ~purchased_orders_df.order_id.isin(paid_orders_df.order_id.unique())
+    ].copy()
+
+    if purchased_orders_df["order_id"].isna().any():
+        raise ValueError("У созданного заказа отсутствует order_id")
+
+    unique_order_ids = purchased_orders_df["order_id"].drop_duplicates().to_numpy()
+
+    assigned_shop_ids = rng.choice(
+        available_shop_ids,
+        size=len(unique_order_ids),
+        replace=True,
+    )
+
+    # Соответствие order_id -> shop_id.
+    shop_by_order = dict(zip(unique_order_ids, assigned_shop_ids))
+
+    purchased_orders_df["shop_id"] = purchased_orders_df["order_id"].map(
+        shop_by_order
+    )
+
+    order_columns = [
+        "user_id",
+        "product_id",
+        "datetime",
+        "order_id",
+        "shop_id",
     ]
 
-    purchased_orders_df = purchased_orders_df[
-        ["user_id", "product_id", "datetime", "order_id"]
-    ].copy()
-    purchased_orders_df["stage"] = "created"
+    created_orders_df = purchased_orders_df[order_columns].copy()
+    created_orders_df["stage"] = "created"
 
-    paid_orders_df = paid_orders_df[
-        ["user_id", "product_id", "datetime", "order_id"]
+    paid_orders_df = interactions_df[
+        interactions_df["interaction_type"] == "paid"
+    ][
+        [
+            "user_id",
+            "product_id",
+            "datetime",
+            "order_id",
+        ]
     ].copy()
+
+    paid_orders_df["shop_id"] = paid_orders_df["order_id"].map(shop_by_order)
+
+    if paid_orders_df["shop_id"].isna().any():
+        raise ValueError(
+            "Для оплаченного заказа не удалось определить shop_id"
+        )
+
+    paid_orders_df = paid_orders_df[order_columns].copy()
     paid_orders_df["stage"] = "accepted"
+
     paid_orders_df["datetime"] = add_random_timedelta(
         paid_orders_df["datetime"],
         max_minutes=59,
         max_seconds=59,
     )
 
-    canceled_orders_df = canceled_orders_df[
-        ["user_id", "product_id", "datetime", "order_id"]
-    ].copy()
+    paid_order_ids = paid_orders_df["order_id"].unique()
+
+    canceled_orders_df = purchased_orders_df[
+        ~purchased_orders_df["order_id"].isin(paid_order_ids)
+    ][order_columns].copy()
+
     canceled_orders_df["datetime"] += timedelta(hours=1)
     canceled_orders_df["stage"] = "canceled"
 
     orders_history_parts = [
-        purchased_orders_df,
+        created_orders_df,
         paid_orders_df,
         canceled_orders_df,
     ]
 
     cur_df = paid_orders_df.copy()
+
     for gen_arr, probs in zip(ORDER_STATES, ORDER_STATES_PROB):
         cur_df = cur_df.copy()
-        cur_df["stage"] = rng.choice(gen_arr, size=len(cur_df), p=probs)
+
+        cur_df["stage"] = rng.choice(
+            gen_arr,
+            size=len(cur_df),
+            p=probs,
+        )
+
         cur_df["datetime"] = add_random_timedelta(
             cur_df["datetime"],
             max_days=0,
@@ -218,10 +278,18 @@ def generate_orders_history_dataframe(
             max_minutes=59,
             max_seconds=59,
         )
-        orders_history_parts.append(cur_df)
-        cur_df = cur_df[~cur_df.stage.isin(DEAD_END_STAGES)]
 
-    orders_history_df = pd.concat(orders_history_parts, ignore_index=True)
+        orders_history_parts.append(cur_df)
+
+        cur_df = cur_df[
+            ~cur_df.stage.isin(DEAD_END_STAGES)
+        ]
+
+    orders_history_df = pd.concat(
+        orders_history_parts,
+        ignore_index=True,
+    )
+
     orders_history_df.loc[
         (orders_history_df.stage == "completed")
         & (
@@ -235,6 +303,11 @@ def generate_orders_history_dataframe(
         "stage",
     ] = "delivered"
 
+    if orders_history_df["shop_id"].isna().any():
+        raise ValueError(
+            "В истории заказов обнаружены события без shop_id"
+        )
+
     orders_history_df.insert(
         0,
         "order_history_id",
@@ -244,7 +317,18 @@ def generate_orders_history_dataframe(
             dtype="int64",
         ),
     )
-    return orders_history_df
+
+    return orders_history_df[
+        [
+            "order_history_id",
+            "user_id",
+            "product_id",
+            "datetime",
+            "order_id",
+            "shop_id",
+            "stage",
+        ]
+    ]
 
 
 def gen_products_price_history_dataframe(products_df: pd.DataFrame) -> pd.DataFrame:
