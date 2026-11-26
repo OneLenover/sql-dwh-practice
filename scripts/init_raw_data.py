@@ -332,7 +332,7 @@ def load_data_to_databases(connections: dict) -> dict[str, dict[str, int]]:
         "redis": {},
     }
 
-    # --- Базовые справочники (небольшие, живут в памяти до конца) ---
+    # Базовые справочники (небольшие, живут в памяти до конца)
     products_df = generate_products_dataframe(
         pd.read_csv(PROJECT_ROOT / "data" / "products.csv", sep=";")
     )

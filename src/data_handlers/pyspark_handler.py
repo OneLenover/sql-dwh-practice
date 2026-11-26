@@ -269,14 +269,7 @@ class PySparkHandler:
         scan_count: int = 1_000,
         batch_size: int = 1_000,
     ) -> SparkDataFrame:
-        """Читает небольшие Redis Hash-наборы и создаёт Spark DataFrame.
-
-        У официального Spark-Redis нет сборки для Spark 4 / Scala 2.13.
-        Поэтому Redis используется как источник через redis-py, а дальнейшая
-        обработка и запись выполняются Spark DataFrame API. В нашем проекте
-        эти наборы содержат только пользовательские справочники (около 10 тыс.
-        ключей), поэтому чтение на driver допустимо.
-        """
+        """Читает небольшие Redis Hash-наборы и создаёт Spark DataFrame."""
         client = redis.Redis(
             host=host,
             port=port,

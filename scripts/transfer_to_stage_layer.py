@@ -543,7 +543,6 @@ def build_latest_revenue_stage() -> dict[str, int | str]:
 
 # 3. Таблица количества интеракций по типам за каждый день
 
-
 def build_daily_interactions_stage() -> dict[str, int]:
     """
     Строит витрину ежедневного количества интеракций по типам.
